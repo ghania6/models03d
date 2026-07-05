@@ -1,4 +1,4 @@
-name: Run Optimized Windows NoMachine
+name: Run Optimized Windows 2025 RDP
 
 on: [workflow_dispatch]
 
@@ -6,55 +6,53 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Configure Windows User and Firewall
+      - name: Configure Windows User and RDP
         shell: powershell
         run: |
-          # 1. تغيير كلمة مرور المسؤول الحالي إلى كلمة مرور قوية
           $Password = ConvertTo-SecureString "WindowsPassword123!" -AsPlainText -Force
           Set-LocalUser -Name "runneradmin" -Password $Password
 
-          # 2. فتح الجدار الناري للمنفذ 4000 المخصص لـ NoMachine
-          New-NetFirewallRule -DisplayName "NoMachine" -Direction Inbound -LocalPort 4000 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
 
-      - name: Install NoMachine Server Silently
-        shell: powershell
-        run: |
-          # 3. تحميل وتثبيت برنامج NoMachine للويندوز بشكل صامت تماماً في الخلفية
-          Write-Output "Downloading NoMachine Installer..."
-          Invoke-WebRequest -Uri "https://download.nomachine.com/download/9.7/Windows/nomachine_9.7.3_1_x64.exe" -OutFile "nomachine.exe"
-          
-          Write-Output "Installing NoMachine (Silent Mode)..."
-          Start-Process -FilePath ".\nomachine.exe" -ArgumentList "/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait
-          
-          # التأكد من تشغيل خدمة nxserver بنجاح
-          Start-Service -Name "nxserver" -ErrorAction SilentlyContinue
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+          Set-Service -Name "TermService" -StartupType Automatic
+          Start-Service -Name "TermService"
 
       - name: Optimize Windows 2025 Performance & Power Consumption
         shell: powershell
         run: |
-          # 4. إيقاف الخدمات غير الضرورية وتسريع المعالج وتوفير موارد الرام
+          # 1. Disable Windows Defender to boost CPU and Disk I/O speed
           Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
           Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
 
+          # 2. Force High Performance Power Plan (unthrottled CPU speed)
           powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
 
+          # 3. Disable heavy background services (Search, Update, Delivery Optimization, Superfetch, Telemetry)
           $Services = @("WSearch", "wuauserv", "DoSvc", "SysMain", "DiagTrack")
           foreach ($Service in $Services) {
               Stop-Service -Name $Service -Force -ErrorAction SilentlyContinue
               Set-Service -Name $Service -StartupType Disabled -ErrorAction SilentlyContinue
           }
 
+          # 4. Limit RDP Color Depth to 16-bit (Saves huge data and battery/rendering power on your phone/PC!)
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "ColorDepth" -Value 3 -ErrorAction SilentlyContinue
+
+          # 5. Disable Visual Effects on Host
+          $Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+          if (-not (Test-Path $Path)) { New-Item -Path $Path -Force | Out-Null }
+          Set-ItemProperty -Path $Path -Name "VisualFXSetting" -Value 2 -ErrorAction SilentlyContinue
+
       - name: Launch Tunnel and Connect
         shell: powershell
         run: |
-          # 5. تنزيل وفك ضغط أداة Bore
           Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
           Expand-Archive -Path "bore.zip" -DestinationPath "."
 
-          # 6. تشغيل النفق في الخلفية لربط منفذ NoMachine (4000)
-          Start-Process -FilePath ".\bore.exe" -ArgumentList "local 4000 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -WindowStyle Hidden
+          Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -WindowStyle Hidden
 
-          # 7. جلب عنوان ومنفذ الاتصال الجديد تلقائياً
           $tcp_address = $null
           for ($i = 0; $i -lt 15; $i++) {
               Start-Sleep -Seconds 2
@@ -66,15 +64,11 @@ jobs:
           }
 
           if ($tcp_address) {
-              # فصل رقم المنفذ العشوائي المولد عن العنوان
-              $port = $tcp_address.Split(':')[-1]
               Write-Output "========================================================"
-              Write-Output "SUCCESS: Windows Server is ready for NoMachine!"
+              Write-Output "SUCCESS: Windows Server is ready for remote connection!"
               Write-Output "========================================================"
-              Write-Output "Connection details for your NoMachine Client:"
-              Write-Output "   - Protocol: NX"
-              Write-Output "   - Host (Address): bore.pub"
-              Write-Output "   - Port: $port"
+              Write-Output "Connection details for your RDP Client (PC or Mobile):"
+              Write-Output "   - Computer Address: $tcp_address"
               Write-Output "   - Username: runneradmin"
               Write-Output "   - Password: WindowsPassword123!"
               Write-Output "========================================================"
