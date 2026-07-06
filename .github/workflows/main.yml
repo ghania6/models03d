@@ -15,19 +15,16 @@ jobs:
           # تفعيل خاصية Remote Desktop
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
 
-          # إعدادات التوافقية الكاملة لنظام Windows 7:
-          # 1. إيقاف فرض التحقق من مستوى الشبكة (NLA)
+          # ضبط وضع التفاوض المستقر لخدمة RDP لضمان تشغيل الخدمة على ويندوز 2025
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-          # 2. إجبار الخادم على استخدام تشفير RDP القياسي (SecurityLayer = 0) لتخطي مشاكل بروتوكولات TLS مع ويندوز 7
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
-          # 3. ضبط مستوى التشفير ليكون متوافقاً مع الأجهزة القديمة (MinEncryptionLevel = 2)
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "MinEncryptionLevel" -Value 2
 
-          # تطبيق نفس الإعدادات في مجلد السياسات (Policies) لضمان عدم الكتابة فوقها تلقائياً من نظام التشغيل
+          # تطبيق نفس الإعدادات في السياسات لضمان عدم استبدالها تلقائياً
           $PolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
           if (-not (Test-Path $PolicyPath)) { New-Item -Path $PolicyPath -Force | Out-Null }
           Set-ItemProperty -Path $PolicyPath -Name "UserAuthentication" -Value 0 -ErrorAction SilentlyContinue
-          Set-ItemProperty -Path $PolicyPath -Name "SecurityLayer" -Value 0 -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path $PolicyPath -Name "SecurityLayer" -Value 1 -ErrorAction SilentlyContinue
           Set-ItemProperty -Path $PolicyPath -Name "MinEncryptionLevel" -Value 2 -ErrorAction SilentlyContinue
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
@@ -52,7 +49,7 @@ jobs:
               Set-Service -Name $Service -StartupType Disabled -ErrorAction SilentlyContinue
           }
 
-          # 4. Limit RDP Color Depth to 16-bit (Saves huge data and battery/rendering power on your phone/PC!)
+          # 4. Limit RDP Color Depth to 16-bit
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "ColorDepth" -Value 3 -ErrorAction SilentlyContinue
 
           # 5. Disable Visual Effects on Host
@@ -63,7 +60,6 @@ jobs:
       - name: Launch Tunnel and Connect
         shell: powershell
         run: |
-          # العودة لاستخدام Bore نظراً لاستقرارها الكامل على خوادم ويندوز وعدم وجود مشاكل Buffering فيها
           Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
           Expand-Archive -Path "bore.zip" -DestinationPath "."
 
