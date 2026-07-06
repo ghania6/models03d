@@ -15,13 +15,9 @@ jobs:
           # تفعيل خاصية الاتصال لسطح المكتب عن بعد
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           
-          # إيقاف فرض التحقق من مستوى الشبكة (NLA)
+          # إيقاف فرض التحقق من مستوى الشبكة (NLA) وتخفيض قيود التشفير لتتوافق مع نظام Windows 7
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-          
-          # خفض مستوى الأمان لتجاوز تشفير TLS الصارم (استخدام التشفير القياسي لـ RDP المتوافق مع ويندوز 7)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
-          
-          # إيقاف التفاوض التلقائي على بروتوكولات الأمان لمنع فشل الاتصال مع الأجهزة القديمة
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "fAllowSecProtocolNegotiation" -Value 0
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
@@ -57,18 +53,19 @@ jobs:
       - name: Launch Tunnel and Connect
         shell: powershell
         run: |
-          Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
-          Expand-Archive -Path "bore.zip" -DestinationPath "."
-
-          Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -WindowStyle Hidden
+          # تشغيل نفق الاتصال الآمن باستخدام SSH عبر Pinggy
+          $SshProcess = Start-Process ssh -ArgumentList "-p 443 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R0:127.0.0.1:3389 tcp@free.pinggy.io" -RedirectStandardOutput "pinggy.log" -RedirectStandardError "pinggy_err.log" -PassThru -WindowStyle Hidden
 
           $tcp_address = $null
           for ($i = 0; $i -lt 15; $i++) {
               Start-Sleep -Seconds 2
-              $log = Get-Content -Path "bore.log" -ErrorAction SilentlyContinue
-              $tcp_address = $log | Select-String -Pattern "bore.pub:[0-9]+" | ForEach-Object { $_.Matches.Value }
-              if ($tcp_address) {
-                  break
+              if (Test-Path "pinggy.log") {
+                  $log = Get-Content -Path "pinggy.log" -Raw
+                  # استخراج عنوان الاتصال العام من السجلات تلقائياً
+                  if ($log -match "tcp://([a-zA-Z0-9.-]+:[0-9]+)") {
+                      $tcp_address = $Matches[1]
+                      break
+                  }
               }
           }
 
@@ -82,9 +79,9 @@ jobs:
               Write-Output "   - Password: WindowsPassword123!"
               Write-Output "========================================================"
           } else {
-              Write-Output "ERROR: Failed to automatically fetch connection address."
-              Write-Output "Dump of bore.log:"
-              Get-Content -Path "bore.log" -ErrorAction SilentlyContinue
-              Write-Output "Dump of bore_err.log:"
-              Get-Content -Path "bore_err.log" -ErrorAction SilentlyContinue
+              Write-Output "ERROR: Failed to establish Pinggy tunnel."
+              Write-Output "Dump of pinggy.log:"
+              Get-Content -Path "pinggy.log" -ErrorAction SilentlyContinue
+              Write-Output "Dump of pinggy_err.log:"
+              Get-Content -Path "pinggy_err.log" -ErrorAction SilentlyContinue
           }
