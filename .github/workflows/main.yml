@@ -1,26 +1,31 @@
-name: Ultimate Windows RDP (Pinggy - Win 7 Fix)
+name: Ultimate Windows RDP (Ngrok Pro - Anti Firewall & Win 7)
 
 on:
   workflow_dispatch:
+    inputs:
+      ngrok_token:
+        description: 'Enter your Ngrok Authtoken'
+        required: true
+        type: string
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Configure Windows User & Disable Firewall for Win 7
+      - name: Configure Windows User, NLA & Kill Firewall
         shell: powershell
         run: |
           $Password = ConvertTo-SecureString "WindowsPassword123!" -AsPlainText -Force
           Set-LocalUser -Name "runneradmin" -Password $Password
 
-          # Enable RDP
+          # Enable RDP Connections
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           
-          # CRITICAL FOR WINDOWS 7: Disable Network Level Authentication (NLA)
+          # FIX FOR WINDOWS 7: Disable Network Level Authentication (NLA) & Security Layer
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
 
-          # DISABLE WINDOWS FIREWALL COMPLETELY
+          # BYPASS/DISABLE WINDOWS FIREWALL COMPLETELY (تعطيل كامل لجدار الحماية)
           Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
           
           Restart-Service -Name "TermService" -Force
@@ -36,40 +41,47 @@ jobs:
               Set-Service -Name $Service -StartupType Disabled -ErrorAction SilentlyContinue
           }
 
-      - name: Launch Pinggy Tunnel & Connect
+      - name: Launch Ngrok Tunnel & Connect
         shell: powershell
         run: |
-          Write-Output "Starting Pinggy TCP Tunnel (No Account Required)..."
+          # Install Ngrok via Chocolatey
+          choco install ngrok --no-progress -y
           
-          # Start Pinggy using SSH
-          Start-Process -FilePath "ssh" -ArgumentList "-p 443 -R0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 tcp@a.pinggy.io" -RedirectStandardOutput "pinggy_out.log" -RedirectStandardError "pinggy_err.log" -WindowStyle Hidden
+          # Configure Authtoken from GitHub Input
+          ngrok config add-authtoken "${{ github.event.inputs.ngrok_token }}"
           
-          Write-Output "Waiting for tunnel connection..."
-          $PinggyUrl = $null
+          # Start Tunnel and create a log file
+          Start-Process ngrok -ArgumentList "tcp 3389 --log=stdout" -RedirectStandardOutput "ngrok.log" -WindowStyle Hidden
           
+          Write-Output "Waiting for Ngrok API to start..."
+          $TunnelUrl = $null
+          
+          # Smart Loop: Try to connect to the API 15 times (every 2 seconds)
           for ($i = 0; $i -lt 15; $i++) {
               Start-Sleep -Seconds 2
-              if (Test-Path "pinggy_out.log") {
-                  $PinggyUrl = Select-String -Path "pinggy_out.log" -Pattern "tcp://[a-zA-Z0-9.-]+:[0-9]+" | ForEach-Object { $_.Matches.Value } | Select-Object -First 1
-                  if ($PinggyUrl) { break }
+              try {
+                  $NgrokApi = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
+                  $TunnelUrl = $NgrokApi.tunnels[0].public_url
+                  if ($TunnelUrl) { break }
+              } catch {
+                  # API not ready yet, keep waiting
               }
           }
           
-          if ($PinggyUrl) {
-              $CleanUrl = $PinggyUrl -replace "tcp://", ""
+          if ($TunnelUrl) {
+              $CleanUrl = $TunnelUrl -replace "tcp://", ""
               Write-Output "========================================================"
-              Write-Output " SUCCESS: Pinggy Tunnel is Active!"
+              Write-Output "SUCCESS: Ngrok Tunnel is Active!"
               Write-Output "========================================================"
               Write-Output " Computer Address : $CleanUrl"
               Write-Output " Username         : runneradmin"
               Write-Output " Password         : WindowsPassword123!"
-              Write-Output "--------------------------------------------------------"
-              Write-Output " Note: Pinggy free tunnels expire in 60 minutes."
               Write-Output "========================================================"
           } else {
-              Write-Output "ERROR: Failed to launch Pinggy tunnel."
-              Get-Content "pinggy_err.log" -ErrorAction SilentlyContinue
+              Write-Output "ERROR: Failed to launch Ngrok tunnel."
+              Write-Output "--- Ngrok Log ---"
+              Get-Content "ngrok.log" -ErrorAction SilentlyContinue
           }
 
-          # Keep Server Active
-          Start-Sleep -Seconds 3600
+          # Keep Active for 6 Hours
+          Start-Sleep -Seconds 21600
