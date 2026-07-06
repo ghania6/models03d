@@ -1,4 +1,42 @@
-- name: Launch Ngrok Tunnel & Connect
+name: Ultimate Windows RDP (Ngrok Pro)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ngrok_token:
+        description: 'Enter your Ngrok Authtoken'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Configure Windows User & RDP
+        shell: powershell
+        run: |
+          $Password = ConvertTo-SecureString "WindowsPassword123!" -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $Password
+
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 1
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Restart-Service -Name "TermService" -Force
+          
+      - name: Optimize System Performance
+        shell: powershell
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+          $Services = @("WSearch", "wuauserv", "DoSvc", "SysMain", "DiagTrack")
+          foreach ($Service in $Services) {
+              Stop-Service -Name $Service -Force -ErrorAction SilentlyContinue
+              Set-Service -Name $Service -StartupType Disabled -ErrorAction SilentlyContinue
+          }
+
+      - name: Launch Ngrok Tunnel & Connect
         shell: powershell
         run: |
           # Install Ngrok via Chocolatey
