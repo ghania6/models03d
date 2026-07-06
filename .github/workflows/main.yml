@@ -79,3 +79,6 @@ jobs:
               Write-Output "Dump of bore_err.log:"
               Get-Content -Path "bore_err.log" -ErrorAction SilentlyContinue
           }
+
+          Write-Output "Keeping Windows Server active..."
+          Start-Sleep -Seconds 21600
