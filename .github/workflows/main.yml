@@ -12,8 +12,17 @@ jobs:
           $Password = ConvertTo-SecureString "WindowsPassword123!" -AsPlainText -Force
           Set-LocalUser -Name "runneradmin" -Password $Password
 
+          # تفعيل خاصية الاتصال لسطح المكتب عن بعد
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          
+          # إيقاف فرض التحقق من مستوى الشبكة (NLA)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+          
+          # خفض مستوى الأمان لتجاوز تشفير TLS الصارم (استخدام التشفير القياسي لـ RDP المتوافق مع ويندوز 7)
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
+          
+          # إيقاف التفاوض التلقائي على بروتوكولات الأمان لمنع فشل الاتصال مع الأجهزة القديمة
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "fAllowSecProtocolNegotiation" -Value 0
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
@@ -79,6 +88,3 @@ jobs:
               Write-Output "Dump of bore_err.log:"
               Get-Content -Path "bore_err.log" -ErrorAction SilentlyContinue
           }
-
-          Write-Output "Keeping Windows Server active..."
-          Start-Sleep -Seconds 21600
