@@ -6,57 +6,57 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: 🛠️ Configure Windows User & RDP for Legacy Clients
+      - name: Configure Windows User & RDP for Legacy Clients
         shell: powershell
         run: |
-          # 1. إعداد كلمة المرور للمستخدم
+          # 1. Setup User Password
           $Password = ConvertTo-SecureString "WindowsPassword123!" -AsPlainText -Force
           Set-LocalUser -Name "runneradmin" -Password $Password
 
-          # 2. تفعيل الاتصال عن بعد
+          # 2. Enable Remote Connections
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           
-          # 3. تعطيل NLA بالكامل (خطوة إجبارية لـ Windows 7)
+          # 3. Disable NLA for Windows 7 Compatibility
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
           
-          # 4. إجبار السيرفر على التوافق مع التشفير القديم (Negotiate)
+          # 4. Force Legacy Security Layer (Negotiate)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 1
 
-          # 5. السماح للـ RDP في جدار الحماية
+          # 5. Enable Firewall Rule
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-          # 6. إعادة تشغيل خدمة الـ RDP لتطبيق التعديلات فورا (هذه الخطوة كانت تنقصك)
+          # 6. Restart Service to Apply Changes
           Restart-Service -Name "TermService" -Force
           
-      - name: 🚀 Optimize System Performance
+      - name: Optimize System Performance
         shell: powershell
         run: |
-          # إيقاف Windows Defender لتسريع المعالج والقرص الصلب
+          # Disable Defender for Performance
           Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
           Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
 
-          # تفعيل وضع الأداء العالي
+          # Set High Performance Power Plan
           powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
 
-          # إيقاف الخدمات الثقيلة التي تستهلك الرام والانترنت
+          # Disable Heavy Background Services
           $Services = @("WSearch", "wuauserv", "DoSvc", "SysMain", "DiagTrack")
           foreach ($Service in $Services) {
               Stop-Service -Name $Service -Force -ErrorAction SilentlyContinue
               Set-Service -Name $Service -StartupType Disabled -ErrorAction SilentlyContinue
           }
 
-      - name: 🌐 Launch Bore Tunnel & Connect
+      - name: Launch Bore Tunnel & Connect
         shell: powershell
         run: |
-          # تحميل أداة Bore
+          # Download Bore
           Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
           Expand-Archive -Path "bore.zip" -DestinationPath "."
 
-          # تشغيل النفق في الخلفية مع تسجيل الأخطاء بدقة
+          # Start Bore Tunnel
           Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -WindowStyle Hidden
 
-          # استخراج رابط الاتصال بشكل ديناميكي واحترافي
-          Write-Host "Waiting for tunnel to establish..." -ForegroundColor Yellow
+          # Extract Connection Link
+          Write-Host "Waiting for tunnel to establish..."
           $tcp_address = $null
           for ($i = 0; $i -lt 15; $i++) {
               Start-Sleep -Seconds 2
@@ -67,21 +67,21 @@ jobs:
               }
           }
 
-          # طباعة النتيجة النهائية بشكل ملون وواضح في الكونسول
+          # Output connection details cleanly without Emojis to prevent parser crash
           if ($tcp_address) {
-              Write-Host "========================================================" -ForegroundColor Green
-              Write-Host " SUCCESS: RDP is Ready! (Optimized for Windows 7)" -ForegroundColor Green
-              Write-Host "========================================================" -ForegroundColor Green
-              Write-Host " 🖥️ Computer Address : $tcp_address" -ForegroundColor Cyan
-              Write-Host " 👤 Username         : runneradmin" -ForegroundColor Cyan
-              Write-Host " 🔑 Password         : WindowsPassword123!" -ForegroundColor Cyan
-              Write-Host "========================================================" -ForegroundColor Green
+              Write-Host "========================================================"
+              Write-Host " SUCCESS: RDP is Ready! (Optimized for Windows 7)"
+              Write-Host "========================================================"
+              Write-Host " Computer Address : $tcp_address"
+              Write-Host " Username         : runneradmin"
+              Write-Host " Password         : WindowsPassword123!"
+              Write-Host "========================================================"
           } else {
-              Write-Host " ERROR: Could not get bore address. Please try again." -ForegroundColor Red
-              Write-Host "--- Error Log ---" -ForegroundColor Red
+              Write-Host " ERROR: Could not get bore address. Please try again."
+              Write-Host "--- Error Log ---"
               Get-Content "bore_err.log" -ErrorAction SilentlyContinue
           }
 
-          # إبقاء السيرفر نشطاً لمدة 6 ساعات
-          Write-Host "Keeping Windows Server active for 6 hours..." -ForegroundColor Yellow
+          # Keep Server Active
+          Write-Host "Keeping Windows Server active for 6 hours..."
           Start-Sleep -Seconds 21600
