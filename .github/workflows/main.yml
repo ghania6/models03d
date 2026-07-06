@@ -1,42 +1,4 @@
-name: Ultimate Windows RDP (Ngrok Pro)
-
-on:
-  workflow_dispatch:
-    inputs:
-      ngrok_token:
-        description: 'Enter your Ngrok Authtoken'
-        required: true
-        type: string
-
-jobs:
-  build:
-    runs-on: windows-latest
-    steps:
-      - name: Configure Windows User & RDP for Legacy Clients
-        shell: powershell
-        run: |
-          $Password = ConvertTo-SecureString "WindowsPassword123!" -AsPlainText -Force
-          Set-LocalUser -Name "runneradmin" -Password $Password
-
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 1
-
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Restart-Service -Name "TermService" -Force
-          
-      - name: Optimize System Performance
-        shell: powershell
-        run: |
-          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
-          powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-          $Services = @("WSearch", "wuauserv", "DoSvc", "SysMain", "DiagTrack")
-          foreach ($Service in $Services) {
-              Stop-Service -Name $Service -Force -ErrorAction SilentlyContinue
-              Set-Service -Name $Service -StartupType Disabled -ErrorAction SilentlyContinue
-          }
-
-      - name: Launch Ngrok Tunnel & Connect
+- name: Launch Ngrok Tunnel & Connect
         shell: powershell
         run: |
           # Install Ngrok via Chocolatey
@@ -45,13 +7,23 @@ jobs:
           # Configure Authtoken from GitHub Input
           ngrok config add-authtoken "${{ github.event.inputs.ngrok_token }}"
           
-          # Start Tunnel
-          Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
-          Start-Sleep -Seconds 7
+          # Start Tunnel and create a log file
+          Start-Process ngrok -ArgumentList "tcp 3389 --log=stdout" -RedirectStandardOutput "ngrok.log" -WindowStyle Hidden
           
-          # Fetch public URL dynamically
-          $NgrokApi = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
-          $TunnelUrl = $NgrokApi.tunnels.public_url
+          Write-Output "Waiting for Ngrok API to start..."
+          $TunnelUrl = $null
+          
+          # Smart Loop: Try to connect to the API 15 times (every 2 seconds)
+          for ($i = 0; $i -lt 15; $i++) {
+              Start-Sleep -Seconds 2
+              try {
+                  $NgrokApi = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
+                  $TunnelUrl = $NgrokApi.tunnels[0].public_url
+                  if ($TunnelUrl) { break }
+              } catch {
+                  # API not ready yet, keep waiting
+              }
+          }
           
           if ($TunnelUrl) {
               $CleanUrl = $TunnelUrl -replace "tcp://", ""
@@ -63,7 +35,9 @@ jobs:
               Write-Output " Password         : WindowsPassword123!"
               Write-Output "========================================================"
           } else {
-              Write-Output "ERROR: Failed to launch Ngrok tunnel. Check your token."
+              Write-Output "ERROR: Failed to launch Ngrok tunnel. This usually means your Token is invalid or missing."
+              Write-Output "--- Ngrok Log ---"
+              Get-Content "ngrok.log" -ErrorAction SilentlyContinue
           }
 
           # Keep Active
